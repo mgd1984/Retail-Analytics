@@ -1,0 +1,507 @@
+
+
+```{r, message=F}
+library(tidyverse)
+library(tidyquant)
+library(modelr)
+library(gridExtra)
+library(grid)
+```
+
+```{r}
+retail <- read_csv("Online Retail.csv",
+                   col_types = cols(
+                     InvoiceNo = col_character(),
+                     StockCode = col_character(),
+                     Description = col_character(),
+                     Quantity = col_integer(),
+                     InvoiceDate = col_datetime("%m/%d/%Y %H:%M"),
+                     UnitPrice = col_double(),
+                     CustomerID = col_integer(),
+                     Country = col_character()
+                   )) %>%
+  mutate(day = parse_date(format(InvoiceDate, "%Y-%m-%d")),
+         day_of_week = wday(day, label = TRUE),
+         time = parse_time(format(InvoiceDate, "%H:%M")),
+         month = format(InvoiceDate, "%m"),
+         income = Quantity * UnitPrice,
+         income_return = ifelse(Quantity > 0, "income", "return"))
+
+```
+
+```{r, fig.height=4, fig.width=10}
+p1 <- retail %>%
+  filter(Country == "United Kingdom") %>%
+  ggplot(aes(x = Country, fill = income_return)) +
+  geom_bar(alpha = 0.8) +
+  scale_fill_manual(values = palette_light()) +
+  theme_tq() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  guides(fill = FALSE) +
+  labs(x = "")
+
+p2 <- retail %>%
+  filter(Country != "United Kingdom") %>%
+  ggplot(aes(x = Country, fill = income_return)) +
+  geom_bar(alpha = 0.8) +
+  scale_fill_manual(values = palette_light()) +
+  theme_tq() +
+  theme(legend.position = "right") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "",
+       fill = "")
+
+grid.arrange(p1, p2, widths = c(0.2, 0.8))
+
+
+```
+
+```{r}
+retail %>%
+  ggplot(aes(x = day, color = income_return)) +
+  facet_grid(income_return ~ ., scales = "free") +
+  geom_freqpoly(bins = 100, size = 1, alpha = 0.8) +
+  scale_color_manual(values = palette_light()) +
+  theme_tq() +
+  guides(color = FALSE) +
+  labs(title = "Number of purchases/returns over time",
+       x = "")
+
+retail %>%
+  ggplot(aes(x = day, y = ..density.., color = income_return)) +
+    geom_freqpoly(size = 1, alpha = 0.8, bins = 100) +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    labs(title = "Density of purchases/returns over time",
+         x = "",
+         color = "")
+
+```
+
+```{r}
+retail %>%
+  group_by(day, income_return) %>%
+  summarise(sum_income = sum(income)) %>%
+  ggplot(aes(x = day, y = sum_income, color = income_return)) +
+    facet_grid(income_return ~ ., scales = "free") +
+    geom_ref_line(h = 0, colour = "grey") +
+    geom_line(size = 1, alpha = 0.8) +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    guides(color = FALSE) +
+    labs(title = "Income/loss from transactions per day",
+         x = "",
+         y = "sum of income/losses",
+         color = "")
+
+retail %>%
+  group_by(time, income_return) %>%
+  summarise(sum_income = sum(income)) %>%
+  ggplot(aes(x = time, y = sum_income, color = income_return)) +
+    facet_grid(income_return ~ ., scales = "free") +
+    geom_ref_line(h = 0, colour = "grey") +
+    geom_line(size = 1, alpha = 0.8) +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    guides(color = FALSE) +
+    labs(title = "Income from purchases/returns per time of day",
+         x = "time of day",
+         y = "sum of income/losses",
+         color = "")
+
+retail %>%
+  filter(day == "2011-12-09") %>%
+  arrange(-Quantity) %>%
+  .[1:3, ]
+
+
+```
+
+```{r Transaction by Day & Time}
+retail %>%
+  ggplot(aes(x = time, y = day)) +
+    stat_bin2d(alpha = 0.8, bins = 25, color = "white") +
+    scale_fill_gradientn(colours = c(palette_light()[[1]], palette_light()[[2]])) +
+    theme_tq() +
+    theme(legend.position = "right") +
+    labs(title = "Purchases/returns per day and time")
+```
+
+```{r Net Income}
+retail %>%
+  mutate(day2 = format(InvoiceDate, "%d")) %>%
+  group_by(month, day2) %>%
+  summarise(sum_income = sum(income)) %>%
+  ggplot(aes(x = month, y = day2, fill = sum_income)) +
+    geom_tile(alpha = 0.8, color = "white") +
+    scale_fill_gradientn(colours = c(palette_light()[[1]], palette_light()[[2]])) +
+    theme_tq() +
+    theme(legend.position = "right") +
+    labs(title = "Net income per month and day",
+         y = "day of the month",
+         fill = "net sum of income")
+
+```
+
+```{r Items}
+retail %>%
+  group_by(StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  arrange(-sum)
+
+```
+
+```{r}
+p1 <- retail %>%
+  group_by(StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  ggplot(aes(x = sum)) +
+    geom_density(fill = palette_light()[[1]], alpha = 0.8) +
+    theme_tq()
+
+p2 <- retail %>%
+  group_by(StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  filter(sum > 1) %>%
+  ggplot(aes(x = sum)) +
+    geom_density(fill = palette_light()[[1]], alpha = 0.8) +
+    theme_tq()
+
+p3 <- retail %>%
+  group_by(StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  filter(sum > 10000) %>%
+  ggplot(aes(x = sum)) +
+    geom_density(fill = palette_light()[[1]], alpha = 0.8) +
+    theme_tq()
+    
+grid.arrange(p1, p2, p3, ncol = 3)
+```
+
+```{r}
+most_sold <- retail %>%
+  group_by(day, StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  group_by(StockCode, Description) %>%
+  summarise(n = n()) %>%
+  arrange(-n)
+
+head(most_sold)
+
+retail %>%
+  filter(StockCode == "85123A") %>%
+  group_by(day, income_return) %>%
+  summarise(sum = sum(Quantity)) %>%
+  ggplot(aes(x = day, y = sum, color = income_return)) +
+    facet_wrap(~ income_return, ncol = 1, scales = "free") +
+    geom_line(size = 1, alpha = 0.5) +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    labs(x = "",
+         y = "sum of quantities",
+         color = "",
+         title = "Transactions of WHITE HANGING HEART T-LIGHT HOLDER")
+```
+
+```{r Repeat Customers}
+rep_customer <- retail %>%
+  group_by(day, CustomerID) %>%
+  summarise(sum = sum(Quantity)) %>%
+  group_by(CustomerID) %>%
+  summarise(n = n()) %>%
+  mutate(repeat_customer = ifelse(n > 1, "repeat_cust", "one_time_cust"))
+
+length(which(rep_customer$repeat_customer == "repeat_cust"))
+
+rep_customer_day <- left_join(retail, rep_customer, by = "CustomerID") %>%
+  distinct(day, CustomerID, repeat_customer) %>%
+  group_by(day, repeat_customer) %>%
+  summarise(n = n()) %>%
+  spread(key = repeat_customer, value = n)
+
+rep_customer %>%
+  group_by(repeat_customer) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n)) %>%
+  ggplot(aes(x = "", y = prop, fill = repeat_customer)) +
+    geom_bar(stat = "identity", alpha = 0.8) +
+    coord_polar("y", start = 0) +
+    scale_fill_manual(values = palette_light()) +
+    theme_tq() +
+    theme(legend.position = "right") +
+    labs(x = "",
+         y = "",
+         fill = "",
+         title = "Proportion of one-time & repeat customers")
+
+
+```
+
+
+```{r Transactions, quantities and items per customer and day}
+customer_purch <- retail %>%
+  group_by(day, CustomerID) %>%
+  summarise(n = n(),
+            sum_it = sum(Quantity),
+            sum_in = sum(income)) %>%
+  group_by(day) %>%
+  summarise(mean_in_cust = mean(sum_in),
+            mean_quant_cust = mean(sum_it),
+            mean_items_cust = mean(n))
+customer_purch %>%
+  gather(x, y, mean_in_cust:mean_items_cust) %>%
+  ggplot(aes(x = day, y = y)) +
+    facet_wrap(~ x, ncol = 1, scales = "free") +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    geom_smooth(color = palette_light()[[2]], method = 'loess') +
+    theme_tq() +
+    labs(x = "", 
+         y = "")
+
+
+
+```
+
+
+```{r Purchases/Returns per Day}
+income_return <- retail %>%
+  group_by(day, income_return) %>%
+  summarise(sum = sum(Quantity)) %>%
+  spread(key = income_return, value = sum)
+income_return %>%
+  gather(x, y, income:return) %>%
+  ggplot(aes(x = day, y = y, color = x)) +
+    geom_line(size = 1, alpha = 0.8) +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    labs(x = "", 
+         y = "quantity of items",
+         color = "")
+
+
+
+```
+
+```{r How many items are purchased/returned per country}
+country_purch <- retail %>%
+  mutate(Country2 = ifelse(Country == "United Kingdom", "uk", "other_country")) %>%
+  group_by(day, Country2) %>%
+  summarise(sum = sum(Quantity)) %>%
+  spread(key = Country2, value = sum) %>%
+  mutate(prop_other_country = other_country / sum(other_country + uk),
+         prop_uk = uk / sum(other_country + uk))
+country_purch %>%
+  gather(x, y, prop_other_country:prop_uk) %>%
+  ggplot(aes(x = day, y = y)) +
+    geom_bar(aes(fill = x), stat = "identity", alpha = 0.6) +
+    scale_fill_manual(values = palette_light()) +
+    geom_line(data = country_purch, aes(x = day, y = prop_uk), size = 1) +
+    theme_tq() +
+    labs(x = "", 
+         y = "proportion of quantity of items",
+         fill = "")
+
+```
+
+```{r How many different items are purchased/return per day}
+n_items <- retail %>%
+  group_by(day, StockCode) %>%
+  summarise(n = n()) %>%
+  group_by(day) %>%
+  summarise(n_items = n())
+n_items %>%
+  ggplot(aes(x = day, y = n_items)) +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    geom_smooth(color = palette_light()[[2]], method = 'loess') +
+    theme_tq() +
+    labs(x = "", 
+         y = "number of different items",
+         color = "")
+```
+
+```{r Net Incomes & Quantities Summaries}
+income <- retail %>%
+  group_by(day) %>%
+  summarise(sum_income = sum(income),
+            mean_income = mean(income),
+            sum_quantity = sum(Quantity),
+            mean_quantity = mean(Quantity))
+income %>%
+  gather(x, y, sum_income:mean_quantity) %>%
+  ggplot(aes(x = day, y = y)) +
+    facet_wrap(~ x, ncol = 1, scales = "free") +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    geom_smooth(color = palette_light()[[2]], method = 'loess') +
+    theme_tq() +
+    labs(x = "", 
+         y = "")
+
+```
+
+```{r Income from purchases and returns}
+purchases <- retail %>%
+  filter(income > 0) %>%
+  group_by(day) %>%
+  summarise(sum_income_purch = sum(income),
+            mean_income_purch = mean(income),
+            sum_quantity_purch = sum(Quantity),
+            mean_quantity_purch = mean(Quantity))
+purchases %>%
+  gather(x, y, sum_income_purch:mean_quantity_purch) %>%
+  ggplot(aes(x = day, y = y)) +
+    facet_wrap(~ x, ncol = 1, scales = "free") +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    geom_smooth(color = palette_light()[[2]], method = 'loess') +
+    theme_tq() +
+    labs(x = "", 
+         y = "")
+
+returns <- retail %>%
+  filter(income < 0) %>%
+  group_by(day) %>%
+  summarise(sum_income_return = sum(income),
+            mean_income_return = mean(income),
+            sum_quantity_return = sum(Quantity),
+            mean_quantity_return = mean(Quantity))
+returns %>%
+  gather(x, y, sum_income_return:mean_quantity_return) %>%
+  ggplot(aes(x = day, y = y)) +
+    facet_wrap(~ x, ncol = 1, scales = "free") +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    theme_tq() +
+    labs(x = "", 
+         y = "")
+```
+
+```{r Mean price per units sold per day}
+temp <- distinct(select(retail, day, StockCode, UnitPrice)) %>%
+  mutate(temp = paste(day, StockCode, sep = "_")) %>%
+  select(temp, UnitPrice)
+
+mean_unit_price <- retail %>%
+  filter(income_return == "income") %>%
+  group_by(day, StockCode) %>%
+  summarise(n = n()) %>%
+  mutate(temp = paste(day, StockCode, sep = "_")) %>%
+  left_join(temp, by = "temp") %>%
+  group_by(day, StockCode) %>%
+  summarise(mean = mean(UnitPrice)) %>%
+  group_by(day) %>%
+  summarise(mean_unit_price = mean(mean))
+mean_unit_price %>%
+  ggplot(aes(x = day, y = mean_unit_price)) +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    theme_tq() +
+    labs(x = "", 
+         y = "mean unit price of sold items")
+
+```
+
+```{r Purchases of Most Items Sold, fig.height=15}
+most_sold_day <- retail %>%
+  filter(StockCode %in% most_sold$StockCode[1:10]) %>%
+  group_by(day, StockCode) %>%
+  summarise(sum = sum(Quantity)) %>%
+  spread(key = StockCode, value = sum)
+
+retail %>%
+  filter(StockCode %in% most_sold$StockCode[1:10]) %>%
+  group_by(day, StockCode, Description) %>%
+  summarise(sum = sum(Quantity)) %>%
+  ggplot(aes(x = day, y = sum)) +
+    facet_wrap(~ StockCode, ncol = 1, scales = "free") +
+    geom_line(color = palette_light()[[1]], size = 1, alpha = 0.8) +
+    theme_tq() +
+    labs(x = "", 
+         y = "net sum of quantites sold")
+```
+
+```{r Combining Data, fig.width=10, fig.height=20}
+retail_p_day <- distinct(select(retail, day, day_of_week, month)) %>%
+  left_join(income, by = "day") %>%
+  left_join(mean_unit_price, by = "day") %>%
+  left_join(purchases, by = "day") %>%
+  left_join(returns, by = "day") %>%
+  left_join(customer_purch, by = "day") %>%
+  left_join(rep_customer_day, by = "day") %>%
+  left_join(income_return, by = "day") %>%
+  left_join(country_purch, by = "day") %>%
+  left_join(n_items, by = "day") %>%
+  left_join(most_sold_day, by = "day") %>%
+  mutate(diff_sum_income = sum_income - lag(sum_income),
+         season = ifelse(month %in% c("03", "04", "05"), "spring",
+                         ifelse(month %in% c("06", "07", "08"), "summer",
+                                ifelse(month %in% c("09", "10", "11"), "fall", "winter"))))
+
+meta <- tibble(colnames_retail_p_day = colnames(retail_p_day)) %>%
+  mutate(description = c(
+    "day in YYYY-MM-DD",
+    "weekday (Sun - Fri, there are no Sat in the dataset)",
+    "month (as month number)",
+    
+    "sum of net income per day (all purchases & losses per day combined)",
+    "mean net income per day (all purchases & losses per day combined)",
+    "sum of net quantities sold/returned per day (all purchases & returns per day combined)",
+    "mean net quantities sold/returned per day (all purchases & returns per day combined)",
+    
+    "mean price per unit sold (returns excluded)",
+    
+    "sum of income from purchases per day (losses excluded)",
+    "mean income from purchases per day (losses excluded)",
+    "sum of quantities from purchases per day (losses excluded)",
+    "mean quantities from purchases per day (losses excluded)",
+    
+    "sum of losses from returns per day (purchases excluded)",
+    "mean losses from returns per day (purchases excluded)",
+    "sum of quantities from returns per day (purchases excluded)",
+    "mean quantities from returns per day (purchases excluded)",
+    
+    "mean net income from all customers per day",
+    "mean number of items from all customers per day",
+    "mean number of items from all customers per day",
+
+    "number of one-time customers per day",
+    "number of repeat customers per day",
+    
+    "sum of items (quantities) purchased per day (returns excluded)",
+    "sum of items (quantities) returned per day (purchases excluded)",
+    
+    "net sum of items (quantities) purchased per day from countries other than the UK",
+    "net sum of items (quantities) purchased per day from the UK",
+    "proportion of net sum of items (quantities) purchased per day from countries other than the UK",
+    "proportion of net sum of items (quantities) purchased per day from the UK",
+    
+    "number of different items purchased/returned per day",
+    
+    "net sum of quantities sold of item with StockCode 20725",
+    "net sum of quantities sold of item with StockCode 21212",
+    "net sum of quantities sold of item with StockCode 22423",
+    "net sum of quantities sold of item with StockCode 22457",
+    "net sum of quantities sold of item with StockCode 22666",
+    "net sum of quantities sold of item with StockCode 22960",
+    "net sum of quantities sold of item with StockCode 47566",
+    "net sum of quantities sold of item with StockCode 84879",
+    "net sum of quantities sold of item with StockCode 85099B",
+    "net sum of quantities sold of item with StockCode 85123A",
+    
+    "difference in sum of net income (purchases - returns) to previous day",
+    "season"
+    ))
+
+retail_p_day %>%
+  # remove last day because it is so extreme
+  filter(day != max(retail_p_day$day)) %>%
+  gather(x, y, sum_income:diff_sum_income) %>%
+  ggplot(aes(x = day, y = y)) +
+    facet_wrap(~ x, scales = "free", ncol = 2) +
+    geom_line(alpha = 0.8, color = palette_light()[[1]]) +
+    geom_point(aes(color = day_of_week)) +
+    geom_smooth() +
+    scale_color_manual(values = palette_light()) +
+    theme_tq() +
+    labs(x = "",
+         y = "",
+         color = "day of the week")
+
+```
+
